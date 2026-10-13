@@ -2,12 +2,12 @@ import {historyStart,validLunchDate} from '@/lib/lunch-dates';
 import {normalizeContact} from '@/lib/whatsapp';
 import {z} from 'zod';
 import {NextRequest,NextResponse} from 'next/server';
-import {getChatGPTUser} from '@/app/chatgpt-auth';
+import {getResponsibleUser} from '@/lib/responsible-auth';
 import {clock,departments,normalized,runtime,dayRows,getFormMode,activeEmployees,settlePending} from '@/lib/lunch';
 import {isFormClosed} from '@/lib/form-control';
 import {storeCall,StoreError} from '@/lib/supabase-store';
 export const dynamic='force-dynamic';
-async function access(req:NextRequest){const e=runtime();const user=await getChatGPTUser();return {admin:!!user&&user.email.toLowerCase()===e.ADMIN_EMAIL.toLowerCase(),form:!!e.FORM_KEY&&req.headers.get('x-form-key')===e.FORM_KEY};}
+async function access(req:NextRequest){const e=runtime();const user=await getResponsibleUser();return {admin:!!user&&user.email.toLowerCase()===e.ADMIN_EMAIL.toLowerCase(),form:!!e.FORM_KEY&&req.headers.get('x-form-key')===e.FORM_KEY};}
 const fail=(error:string,status=400)=>NextResponse.json({error},{status});
 export async function GET(req:NextRequest){try{
  const {admin,form}=await access(req);if(!admin&&!form)return fail('Acesse pelo link enviado no grupo.',403);
