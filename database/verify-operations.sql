@@ -1,0 +1,30 @@
+begin;
+do $test$
+declare d date := (now() at time zone 'America/Sao_Paulo')::date; result jsonb; n integer;
+begin
+ insert into public.employees(id,name,department,normalized,created_date) values ('migration-check-active','Teste migração','T.I.','migration-check-active',d),('migration-check-deleted','Teste excluído','T.I.','migration-check-deleted',d);
+ update public.employees set deleted_date=d where id='migration-check-deleted';
+ insert into public.daily_control(date,mode,updated_at) values(d,'open',now()) on conflict(date) do update set mode='open';
+ result:=public.almocometro_operation('reply',jsonb_build_object('id','migration-check-reply','employeeId','migration-check-active','answer',1));
+ if result->>'saved'<>'true' then raise exception 'Reply failed';end if;
+ result:=public.almocometro_operation('reply',jsonb_build_object('id','migration-check-duplicate','employeeId','migration-check-active','answer',0));
+ if (result->>'status')::integer<>409 then raise exception 'Duplicate not blocked';end if;
+ perform public.almocometro_operation('settle','{}');
+ select answer into n from public.replies where employee_id='migration-check-active' and date=d;
+ if n<>1 then raise exception 'Answer overwritten';end if;
+ if exists(select 1 from public.replies where employee_id='migration-check-deleted') then raise exception 'Deleted employee settled';end if;
+ insert into public.replies(id,employee_id,date,answer,updated_at) values('migration-check-history','migration-check-active',d-1,1,now());
+ perform public.almocometro_operation('edit',jsonb_build_object('employeeId','migration-check-active','name','Nome atualizado','department','Engenharia','normalized','migration-check-renamed'));
+ if not exists(select 1 from public.replies where id='migration-check-history' and employee_name='Teste migração' and employee_department='T.I.') then raise exception 'Historical snapshot not preserved';end if;
+ if not exists(select 1 from public.replies where id='migration-check-reply' and employee_name='Nome atualizado' and employee_department='Engenharia') then raise exception 'Current snapshot not updated';end if;
+ perform public.almocometro_operation('reply',jsonb_build_object('id','migration-check-adjust','employeeId','migration-check-active','date',d,'answer',0,'adjust',true));
+ select answer into n from public.replies where employee_id='migration-check-active' and date=d;
+ if n<>0 then raise exception 'Correction failed';end if;
+ perform public.almocometro_operation('day',jsonb_build_object('date',d,'retro',true));
+ perform public.almocometro_operation('history',jsonb_build_object('start',d-1,'end',d));
+ perform public.almocometro_operation('employees','{}');
+ perform public.almocometro_operation('prices','{}');
+ if has_function_privilege('anon','public.almocometro_operation(text,jsonb)','EXECUTE') or has_function_privilege('authenticated','public.almocometro_operation(text,jsonb)','EXECUTE') then raise exception 'Public function privilege';end if;
+end;$test$;
+select 'passed' as migration_checks;
+rollback;
